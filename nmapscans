@@ -1,0 +1,136 @@
+#!/bin/bash
+#this script takes new dhcp lease IPs, organizes results into windows and linux
+#scans them, processes and filters results, and emails output
+#run python script to get splunk search results for new dhcp leases
+/usr/bin/python /home/PYi/splunkapi/splunksearch.py > /home/PYi/splunkapi/working/splunkresults
+
+#run nmap on port 445 on search results
+/usr/bin/nmap -n -Pn -p 445 -iL /home/PYi/splunkapi/working/splunkresults -oG /home/PYi/splunkapi/working/nmapresults
+
+#separate results into open and closed 445, get list of ips for each. [redacted] is perimeter, [redated] is vpn
+/bin/grep Ports /home/PYi/splunkapi/working/nmapresults | /bin/grep -v open | /bin/awk '{print $2}' | /bin/sort -u > /home/PYi/splunkapi/working/445closed
+/bin/grep Ports /home/PYi/splunkapi/working/nmapresults | /bin/grep open | /bin/awk '{print $2}' | /bin/sort -u > /home/PYi/splunkapi/working/445open
+
+#445open first
+#create output file
+/bin/cat /dev/null > /home/PYi/splunkapi/working/winout
+/bin/touch /home/PYi/splunkapi/working/winout
+
+#loop to get domain name of each ip
+while read line
+do
+/usr/bin/smbclient -L $line -U 'username%password' 2> /home/PYi/splunkapi/working/winworking
+domain=`/bin/grep Domain /home/PYi/splunkapi/working/winworking | /bin/awk '{print $1}'`
+/bin/echo "$line $domain" >> /home/PYi/splunkapi/working/winout
+done < /home/PYi/splunkapi/working/445open
+
+#take out [redacted] and [redacted] ips
+/bin/grep -v [redacted] /home/PYi/splunkapi/working/winout > /home/PYi/splunkapi/working/winout1
+/bin/grep -v '10.27' /home/PYi/splunkapi/working/winout1 | /bin/awk '{print $1}' > /home/PYi/splunkapi/working/winout2
+/bin/touch /home/PYi/splunkapi/working/ipname
+/bin/cat /dev/null > /home/PYi/splunkapi/working/ipname
+while read line
+do
+name=`/usr/bin/host $line | /bin/awk '{print $5}'`
+echo "$line $name" >> /home/PYi/splunkapi/working/ipname
+done < /home/PYi/splunkapi/working/winout2
+
+#remove lines that start with Domain. also remove known good like [redacted]
+/bin/grep -v '^D' /home/PYi/splunkapi/working/ipname | /bin/grep -v [redacted] | /bin/grep -v [redacted] | /bin/sort > /home/PYi/splunkapi/working/ipname2
+/bin/cp /home/PYi/splunkapi/working/ipname2 /home/PYi/splunkapi/working/ipname
+
+#skipping this for now.
+#/bin/grep -v '[redacted].com' /home/PYi/splunkapi/working/ipname | /bin/grep -v WORKGROUP > /home/PYi/splunkapi/working/ipnamefinal
+
+#mail out results
+#/bin/mail -a /home/PYi/splunkapi/working/ipname -s "windows" pyi@[redacted].com < /dev/null
+
+#check validity ofhostnames
+/bin/touch /home/PYi/splunkapi/working/goodbad
+/bin/cat /dev/null > /home/PYi/splunkapi/working/goodbad
+while read line
+do
+hst=`/bin/echo $line | /bin/awk '{print $2}' | /bin/awk -F '.' '{print $1}'`
+/usr/bin/ldapsearch -h [redacted] -p 389 -x -D "CN=Yi\, Paul,OU=[redacted],DC=[redacted]" -b "OU=[redacted],DC=[redacted]" "CN=$hst" -w 'password' | grep numEntries
+if [ $? -eq 1 ]
+then
+/bin/echo "$line bad" >> /home/PYi/splunkapi/working/goodbad
+else
+/bin/echo "$line good" >> /home/PYi/splunkapi/working/goodbad
+fi
+done < /home/PYi/splunkapi/working/ipname
+
+/bin/grep bad /home/PYi/splunkapi/working/goodbad > /home/PYi/splunkapi/working/bad
+
+/bin/mail -a /home/PYi/splunkapi/working/bad -s "windows bad" pyi@[redacted] < /dev/null
+
+GBD=/home/PYi/splunkapi/working/$(/bin/date +%y%m%d%H)goodbad
+/bin/touch $GBD
+/bin/cp /home/PYi/splunkapi/working/goodbad $GBD
+
+#get hostnames for 445closed, see which ones are valid
+/bin/touch /home/PYi/splunkapi/working/445closedipname
+/bin/cat /dev/null > /home/PYi/splunkapi/working/445closedipname
+while read line
+do
+name=`/usr/bin/host $line | /bin/awk '{print $5}'`
+echo "$line $name" >> /home/PYi/splunkapi/working/445closedipname
+done < /home/PYi/splunkapi/working/445closed
+
+/bin/touch /home/PYi/splunkapi/working/445closedgoodbad
+/bin/cat /dev/null > /home/PYi/splunkapi/working/445closedgoodbad
+
+while read line
+do
+hst=`/bin/echo $line | /bin/awk '{print $2}' | /bin/awk -F '.' '{print $1}'`
+/bin/echo $hst
+/usr/bin/ldapsearch -h [redacted] -p 389 -x -D "CN=Yi\, Paul,OU=[redacted],DC=[redacted]" -b "OU=[redacted],DC=[redacted]" "CN=$hst" -w 'password' | grep numEntries
+if [ $? -eq 1 ]
+then
+/bin/echo "$line bad" >> /home/PYi/splunkapi/working/445closedgoodbad
+else
+/bin/echo "$line good" >> /home/PYi/splunkapi/working/445closedgoodbad
+fi
+done < /home/PYi/splunkapi/working/445closedipname
+
+/bin/grep good /home/PYi/splunkapi/working/445closedgoodbad > /home/PYi/splunkapi/working/445closedgood
+/bin/grep bad /home/PYi/splunkapi/working/445closedgoodbad > /home/PYi/splunkapi/working/445closedbad
+/bin/awk '{print $1}' /home/PYi/splunkapi/working/445closedbad > /home/PYi/splunkapi/working/445closedbadips
+
+#create output file for -O scn results
+OSOF=/home/PYi/splunkapi/working/$(/bin/date +%y%m%d%H)nmapOS
+OSOF2=/home/PYi/splunkapi/working/$(/bin/date +%y%m%d%H)nmapOSgrep
+/bin/touch $OSOF
+/bin/touch $OSOF2
+
+#do -O scan on closed 445 list
+#/usr/bin/sudo /usr/bin/nmap -p 1,21,22,23,25,53,80,110,111,123,135,143,161,162,389,443,998,3389,5001,5060,5900,7000,7100,8000,8001,8080,8443,44761,42933,43024,44528 -Pn -O -iL /home/PYi/splunkapi/working/445closed -oX $OSOF
+
+#/usr/bin/sudo /usr/bin/nmap -O -T5 -F -Pn -iL /home/PYi/splunkapi/working/445closedbadips -oG $OSOF2
+
+/usr/bin/sudo /usr/bin/nmap -O -T5 -Pn -iL /home/PYi/splunkapi/working/445closedbadips -oG $OSOF2
+
+#take some stuff out of OSOF2 - [redacted] is  10.27.64.0/22  10.27.80.0/20 [redacted] is 10.193.2 [redacted] is av........[redacted].com 10.131.x.x is [redacted] 10.211 is [redacted] 10.235 is [redacted] 10.251 is [redacted]
+/bin/grep -v [redacted] $OSOF2 | /bin/grep -v [redacted].com | /bin/grep -v ' 10.27.64' | /bin/grep -v ' 10.27.65' | /bin/grep -v ' 10.27.66' | /bin/grep -v ' 10.27.67' | /bin/grep -v ' 10.27.8.\.' |  /bin/grep -v ' 10.27.90' |  /bin/grep -v ' 10.27.91' |  /bin/grep -v ' 10.27.92' |  /bin/grep -v ' 10.27.93' |  /bin/grep -v ' 10.27.94' |  /bin/grep -v ' 10.27.95' | /bin/grep -v ' 10.193.2' | /bin/grep -v [redacted].com | /bin/grep -v ' 10.131.' | /bin/grep -v ' 10.211.' | /bin/grep -v ' 10.235.' | /bin/grep -v ' 172.16.3' | /bin/grep -v ' 10.251.' > /home/PYi/splunkapi/working/greptemp
+
+
+/bin/cp /home/PYi/splunkapi/working/greptemp $OSOF2
+
+#pretty print xml
+/bin/cat $OSOF | /usr/bin/xmllint --format - > /home/PYi/splunkapi/working/formatted
+
+#take out some stuff
+/usr/bin/xmlstarlet ed -d "//host[hostnames/hostname/@name = '[redacted]']" /home/PYi/splunkapi/working/formatted > /home/PYi/splunkapi/working/temp
+
+/usr/bin/xmlstarlet ed -d "//host[hostnames/hostname/@name = '[redacted]']" /home/PYi/splunkapi/working/temp > /home/PYi/splunkapi/working/temp1
+
+/usr/bin/xmlstarlet ed -d "//host[hostnames/hostname/@name = '[redacted]']" /home/PYi/splunkapi/working/temp1 > /home/PYi/splunkapi/working/temp2
+
+/usr/bin/xmlstarlet ed -d "//host[hostnames/hostname/@name = '[redacted]']" /home/PYi/splunkapi/working/temp2 > /home/PYi/splunkapi/working/out
+#mail out results
+#/bin/mail -a /home/PYi/splunkapi/working/out -s "non windows" pyi@[redacted] < /dev/null
+/bin/mail -a $OSOF2 -s "non windows grep" pyi@[redacted] < /dev/null
+
+#mail out what was filtered by xmlsatlet
+/usr/bin/diff /home/PYi/splunkapi/working/out /home/PYi/splunkapi/working/formatted > /home/PYi/splunkapi/working/filtered
+/bin/mail -a /home/PYi/splunkapi/working/filtered -s "filtered" pyi@[redacted] < /dev/null
