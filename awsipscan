@@ -1,0 +1,53 @@
+#!/bin/bash
+#checks splunk logs for communication with AWS IPs
+#scans them for services
+#goal is to get inventory of AWS ips we manage
+#gets internal source IPs for ssh communication
+
+OSOF=/home/PYi/awsips/working/$(/bin/date +%y%m%d%H)out
+/bin/touch $OSOF
+#/usr/bin/python /home/PYi/awsips/splunksearch.py | paste - - - | sort -u > /home/PYi/awsips/working/out
+#172.16.164.17 ha like 2000+ entries, i think it's a gateway of sorts
+/bin/cat /dev/null > /home/PYi/awsips/working/srcdstport
+/bin/touch /home/PYi/awsips/working/srcdstport
+/usr/bin/python /home/PYi/awsips/splunksearch.py | /bin/grep -v 172.16.164.17 > /home/PYi/awsips/working/temp 
+/bin/cat /home/PYi/awsips/working/temp | /usr/bin/paste - - - - | /bin/sort -u | /bin/grep -v udp > /home/PYi/awsips/working/srcdstport
+
+#do netcat port check on each line
+
+while read line
+do
+ip=`/bin/echo $line | /bin/awk '{print $2}'`
+prt=`/bin/echo $line | /bin/awk '{print $4}'` 
+echo $ip
+echo $prt
+/bin/echo $line >> $OSOF
+/usr/bin/nc -vz $ip $prt &>> $OSOF
+done < /home/PYi/awsips/working/srcdstport
+
+#for open ports do -sV check
+/bin/grep succeeded $OSOF | /bin/sort -u > /home/PYi/awsips/working/openports
+OSOF2=/home/PYi/awsips/working/$(/bin/date +%y%m%d%H)final
+/bin/touch $OSOF2
+while read line
+do
+ip=`/bin/echo $line | /bin/awk '{print $3}'`
+prt=`/bin/echo $line | /bin/awk '{print $4}'`
+/usr/bin/nmap -Pn -p $prt $ip -oG $OSOF2 --append-output 
+done < /home/PYi/awsips/working/openports
+
+#mail results of netcat port check
+/bin/grep tcp $OSOF2 > /home/PYi/awsips/working/final
+
+
+#get source ips for each amazon ip/port
+OSOF3=/home/PYi/awsips/working/$(/bin/date +%y%m%d%H)finalwsrc
+/bin/touch $OSOF3
+while read line
+do
+ip=`/bin/echo $line | /bin/awk '{print $2}'`
+sources=`/bin/grep $ip /home/PYi/awsips/working/srcdstport | /bin/awk '{print $1}' | /bin/sort -u | tr '\n' ' '`
+/bin/echo "$line $sources" >> $OSOF3
+done < /home/PYi/awsips/working/final
+
+/bin/mail -a $OSOF3 -s "awsips" pyi@sempra.com < /dev/null
