@@ -1,6 +1,7 @@
 #!/bin/bash
 #this script takes new dhcp lease IPs, organizes results into windows and linux
-#scans them, processes and filters results, and emails output
+#figures out which IPs/names are expected
+#scans unexpected ones, processes and filters results, and emails output
 #run python script to get splunk search results for new dhcp leases
 /usr/bin/python /home/PYi/splunkapi/splunksearch.py > /home/PYi/splunkapi/working/splunkresults
 
