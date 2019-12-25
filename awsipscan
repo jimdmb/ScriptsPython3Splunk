@@ -2,15 +2,15 @@
 #checks splunk logs for communication with AWS IPs
 #scans them for services
 #goal is to get inventory of AWS ips we manage
-#gets internal source IPs for ssh communication
+#gets source IPs for communication
 
 OSOF=/home/PYi/awsips/working/$(/bin/date +%y%m%d%H)out
 /bin/touch $OSOF
 #/usr/bin/python /home/PYi/awsips/splunksearch.py | paste - - - | sort -u > /home/PYi/awsips/working/out
-#172.16.164.17 ha like 2000+ entries, i think it's a gateway of sorts
+#[redacted] has like 2000+ entries, i think it's a gateway of sorts
 /bin/cat /dev/null > /home/PYi/awsips/working/srcdstport
 /bin/touch /home/PYi/awsips/working/srcdstport
-/usr/bin/python /home/PYi/awsips/splunksearch.py | /bin/grep -v 172.16.164.17 > /home/PYi/awsips/working/temp 
+/usr/bin/python /home/PYi/awsips/splunksearch.py | /bin/grep -v [redacted] > /home/PYi/awsips/working/temp 
 /bin/cat /home/PYi/awsips/working/temp | /usr/bin/paste - - - - | /bin/sort -u | /bin/grep -v udp > /home/PYi/awsips/working/srcdstport
 
 #do netcat port check on each line
@@ -50,4 +50,4 @@ sources=`/bin/grep $ip /home/PYi/awsips/working/srcdstport | /bin/awk '{print $1
 /bin/echo "$line $sources" >> $OSOF3
 done < /home/PYi/awsips/working/final
 
-/bin/mail -a $OSOF3 -s "awsips" pyi@sempra.com < /dev/null
+/bin/mail -a $OSOF3 -s "awsips" pyi@[redacted] < /dev/null
