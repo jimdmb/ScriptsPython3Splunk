@@ -1,3 +1,7 @@
+#creates 2 shells on target
+#one is used to setup a remore port forward using plink, which will kill the shell
+#the other can be used to setup a socks proxy with powershell, to pivot into target network
+
 import os,socket,subprocess,threading;
 def ss2pp(ss, pp):​
     while True:​
