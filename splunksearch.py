@@ -10,7 +10,7 @@ import json
 #added to repository to supplement other scripts
 
 baseurl = '[redacted]'
-username = ']redacted]'
+username = '[redacted]'
 password = '[redacted]'
 
 myhttp = httplib2.Http(disable_ssl_certificate_validation=True)
