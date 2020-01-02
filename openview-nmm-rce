@@ -1,4 +1,4 @@
-#HP Openview Network Node Manager remote code exploit
+#HP Openview Network Node Manager 7.0.1 remote code exploit
 
 #using spike fuzzer and o ollydbg, the SEH overwrite was found to be 3381 
 #bytes into the buffer placed in the Host parameter on a request to /topology/home
