@@ -8,7 +8,7 @@
 #run nmap on port 445 on search results
 /usr/bin/nmap -n -Pn -p 445 -iL /home/PYi/splunkapi/working/splunkresults -oG /home/PYi/splunkapi/working/nmapresults
 
-#separate results into open and closed 445, get list of ips for each. [redacted] is perimeter, [redated] is vpn
+#separate results into open and closed 445, get list of ips for each. [redacted] is perimeter, [redacted] is vpn
 /bin/grep Ports /home/PYi/splunkapi/working/nmapresults | /bin/grep -v open | /bin/awk '{print $2}' | /bin/sort -u > /home/PYi/splunkapi/working/445closed
 /bin/grep Ports /home/PYi/splunkapi/working/nmapresults | /bin/grep open | /bin/awk '{print $2}' | /bin/sort -u > /home/PYi/splunkapi/working/445open
 
