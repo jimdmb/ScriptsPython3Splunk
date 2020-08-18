@@ -1,9 +1,9 @@
 
-#On	 the	debugging	machine,	application can be crashed	on	port	
-#4455	 and	 overwrite	 EIP.	 	 /usr/share/metasploit-framework/tools/exploit/pattern_create.rb is used to	
+#On the debugging	machine,	application can be crashed	on	port	
+#4455 and overwrite EIP. /usr/share/metasploit-framework/tools/exploit/pattern_create.rb is used to	
 #create	a	unique	pattern,	and /usr/share/metasploit-framework/tools/exploit/pattern_locate.rb to	figure	
-#out	the	EIP	offset.		bad	characters checked	by	putting	all	256	characters after	the	offset	in	the	
-#buffer,	and	then	seeing	which	ones	didn’t	show	up.		The	256	characters	appeared	in	the	stack.		For this application
+#out	the	EIP	offset. bad	characters checked	by	putting	all	256	characters after	the	offset	in	the	
+#buffer,	and	then	seeing	which	ones	didn’t	show	up. The	256	characters	appeared	in	the	stack. For this application
 #04, a4, ef,	and	ba were	not	showing	up	properly	in	the	stack.	!mona	modules	is used to	find	a	
 #suitable	.dll	 that	 wasn’t	 affected	 by	 any	memory	 protection	 schemes.	 !mona	 find –s
 #“\xff\xe4”		-m	dll command is used 	to	find	a	suitable	JMP	ESP	address	to	put	in	EIP.	plenty	of space	
