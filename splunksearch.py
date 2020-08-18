@@ -1,3 +1,5 @@
+#mostly copied python script to do a splunk query
+
 import urllib
 import httplib2
 import time
