@@ -1,0 +1,114 @@
+#!/bin/bash
+
+#this script gets CDN names and app service names 
+
+#login to azure
+az login -u user@example.com -p s3cr3t
+
+#set home dir and file names
+dir="/home/admin/az/azweb/"
+subids="$dir"subids
+subprofrg="$dir"subprofrg
+hostnames="$dir"hostnames
+sitesstatus="$dir"sitesstatus
+sitesrunning="$dir"sitesrunning
+output="$dir"output
+twos="$dir"twos
+curlout="$dir"curlout
+final="$dir"final
+
+#clear out working files
+touch $subids
+cat /dev/null > $subids
+touch $subprofrg
+cat /dev/null > $subprofrg
+touch $hostnames
+cat /dev/null > $hostnames
+cat /dev/null > $sitesstatus
+touch $sitesrunning
+cat /dev/null > $sitesrunning
+touch $output
+cat /dev/null > $output
+touch $twos
+cat /dev/null > $twos
+touch $curlout
+cat /dev/null > $curlout
+touch $final
+cat /dev/null > $final
+
+#get list of subscription ids
+az account list --all --query '[].{id:id}' -o tsv > $subids
+
+######################
+#START CDNS
+######################
+
+#loop through subscription ids to get sub id + profile name + resource group
+while read line
+do
+az account set --subscription $line
+az cdn profile list --query '[].{id:id}' -o tsv >> $subprofrg
+done < $subids
+
+#loop through subprofrg to get site names
+while read line
+do
+sid=`echo $line | awk -F '/' '{print $3}'`
+profname=`echo $line | awk -F '/' '{print $9}'`
+resgrp=`echo $line | awk -F '/' '{print $5}'`
+az account set --subscription $sid
+az cdn endpoint list --profile-name $profname -g $resgrp --query '[].{hostName:hostName}' -o tsv >> $hostnames
+
+done < $subprofrg
+
+#curl each site in hostnames
+
+while read line
+do
+code=`curl -L -s -o /dev/null -I -w "%{http_code}" $line`
+echo $code" "$line >> $output
+done < $hostnames
+
+#######################
+#Start App Service
+#######################
+#loop through sub ids and do az webapp list
+while read line
+do
+az account set --subscription $line
+az webapp list --query "[].{hostName: defaultHostName, state: state}" -o tsv >> $sitesstatus
+done < $subids
+
+#grep for running to get just sites
+/usr/bin/grep unning $sitesstatus | awk '{print $1}' > $sitesrunning
+
+#get codes for connectin to 80
+while read line
+do
+code=`curl -L -s -o /dev/null -I -w "%{http_code}" $line`
+echo $code" "$line >> $output
+done < $sitesrunning
+
+##################
+#check for sites that redirect to ms login
+grep 200 $output > $twos
+while read line
+do
+site=`echo $line | awk '{print $2}'`
+curl -L $site > $curlout
+grep 'Sign in to your account' $curlout
+if [ $? -eq 1 ]
+then
+echo $line >> $final
+fi
+done < $twos
+
+##################
+#take out exceptions
+grepterm=`cat /home/admin/az/azweb/exceptions | /usr/bin/tr '\n' '|'`
+grep -v -E "$grepterm" $final > /home/admin/az/azweb/finaltemp 
+cp /home/admin/az/azweb/finaltemp $final
+
+
+d8=`date +"%m-%d-%y"`
+sed -i "1s/^/$d8 These are websites that are available to the world.  Look up contacts in the azure portal and ask if they should be restricted\n/" "$final"
