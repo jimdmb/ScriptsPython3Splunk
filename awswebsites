@@ -1,0 +1,58 @@
+#!/bin/bash
+
+#set home dir and file names
+dir="/home/admin/aws/websites/"
+zones="$dir"zones
+cf="$dir"cf
+cffinal="$dir"cffinal
+combined="$dir"combined
+output="$dir"output
+final="$dir"final
+
+#clear out files
+touch $zones
+cat /dev/null > $zones
+touch $cf
+cat /dev/null > $cf
+touch $cffinal
+cat /dev/null > $cffinal
+touch $combined
+cat /dev/null > $combined
+touch $output
+cat /dev/null > $output
+touch $final
+cat /dev/null > $final
+
+#loop through profiles to get zones
+while read line
+do
+/usr/local/bin/aws --profile $line route53 list-hosted-zones | jq '.HostedZones[].Name' | /usr/bin/sed 's/\"//g' | /usr/bin/sed 's/com\./com/g' >> $zones
+done < /home/admin/aws/websites/profiles
+
+#now get stuff from cloudfront
+while read line
+do
+/usr/local/bin/aws --profile $line cloudfront list-distributions >> $cf 
+done < /home/admin/aws/websites/profiles
+
+#greps and seds to get actual names
+
+grep com $cf | grep -v DomainName | grep -v '_com' | grep -v Comment | grep -v Custom | grep -v S3 | sed 's/ //g' | sed 's/CNAME//g' | sed 's/TargetOriginId//g' | sed 's/\"//g' | sed 's/\://g' | sed 's/\,//g' | sed 's/Id//g' | sort -u > $cffinal
+
+#combine cloudfront and hosted zones
+
+cat $zones $cffinal | sort -u > $combined 
+
+#get code for each zone
+d8=`date +"%m-%d-%y"`
+echo "These are public websites in aws(200).  >> $output
+echo 200-$d8 >> $output
+while read line
+do
+code=`/usr/bin/curl -L -s -o /dev/null -I -w "%{http_code}" $line`
+echo $code" "$line >> $output
+done < $combined
+
+#take out the weird ones
+grepterm=`cat 20210624ms | tr '\n' '|'`
+grep -v -E "$grepterm" $output > $final
